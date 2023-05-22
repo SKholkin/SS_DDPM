@@ -4,9 +4,10 @@ from tqdm import tqdm
 import os
 import torch
 from torch.distributions.beta import Beta
+from scipy import interpolate
 
 
-batch_size = 1024
+batch_size = 2048
 T = 1000
 import numpy as np
 device = 'cuda'
@@ -39,17 +40,49 @@ def sufficient_stats(x_t, t):
     
     return theta * torch.log(x_t / (1 - x_t))
                                                  
-def noising_sch(t, mode='exp_linear', theta_start=1e4, theta_end = 1e-3):
+
+def noising_sch(t, mode='exp_cubic', theta_start=1e3, theta_end = 1e-3):
     if mode == 'linear':
         theta = theta_end + (T - t) / T * (theta_start - theta_end)
-    elif mode=='exp_linear':
+    elif mode=='exp_linear': 
         log10_theta = np.log10(theta_end) + (T - t) / T * (np.log10(theta_start) - np.log10(theta_end))
+        theta = torch.pow(10, log10_theta)
+    elif mode=='exp_cubic':
+        spline = interpolate.CubicSpline([1, T * 0.3, T * 0.7, T], [3, 0.7, 0, -3])
+        log10_theta = torch.Tensor(spline(t.cpu().numpy()))
         theta = torch.pow(10, log10_theta)
     else:
         raise BaseException('Unknown schedule mode')
         
     return torch.Tensor(theta).to(device)
 
+
+def sample_chain_suff_stats_norm_alpha(t_batch, x_0):
+    samples = []
+    suff_stats = torch.zeros_like(x_0)
+    suff_stats_normed = torch.zeros_like(x_0)
+    t_min = torch.min(t_batch)
+    helper = torch.Tensor([[t <= s for s in range(T + 1)] for t in t_batch]).to(device)
+    
+    alphas = torch.zeros_like(x_0)
+    
+    for s in range(T, int(t_min), -1):
+        s_batch = torch.tensor([s], device=device).repeat(batch_size)
+        helper_slice = helper[:, s]
+        
+        mu = noising_sch(s_batch)
+        
+        alpha, beta = alpha_beta(mu, x_0)
+        
+        dist = Beta(alpha, beta)
+        samples.append(dist.sample())
+        alphas += helper_slice.reshape([-1, 1, 1, 1]) * mu.reshape([-1, 1, 1, 1]).repeat([1, 1, 28, 28])
+        
+        suff_stats += helper_slice.reshape([-1, 1, 1, 1]) * sufficient_stats(samples[-1], s_batch)
+        
+    suff_stats_normed = suff_stats / alphas
+        
+    return samples, suff_stats_normed
 
 def sample_chain(t_batch, x_0):
     samples = []
@@ -82,7 +115,7 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     for i in tqdm(range(n_iters)):
         x_0 = next(iter(pic_dataloader))[0].to(device)
         t_batch = sample_t_batch(batch_size)
-        samples, suff_stats = sample_chain(t_batch, x_0)
+        samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0)
         
         x_0_storage.append(x_0.cpu())
         t_batch_storage.append(t_batch.cpu())
@@ -105,7 +138,7 @@ plt.imshow(dataset[0][0].squeeze(), cmap='gray')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-n_samples = 50000
+n_samples = 100000
 x_0_tensor, t_batch_tensor, suff_stats_tensor = generate_dataset(dataloader, n_samples, batch_size=batch_size)
 
 torch.save(x_0_tensor, 'x_0_dataset.pth')
