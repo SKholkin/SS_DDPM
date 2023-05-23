@@ -29,6 +29,10 @@ def sufficient_stats(x_t, t):
     mu = noising_sch(t).reshape([-1, 1, 1, 1])
     
     return mu * torch.log(x_t / (1 - x_t))
+
+def sufficient_stats_part2(x_t):
+    
+    return torch.log(x_t / (1 - x_t))
                         
 def sample_chain(t_batch, x_0, T=1000):
     samples = []

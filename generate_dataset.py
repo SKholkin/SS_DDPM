@@ -6,7 +6,7 @@ import torch
 from torch.distributions.beta import Beta
 from scipy import interpolate
 
-
+from beta import sufficient_stats_part2
 batch_size = 2048
 T = 1000
 import numpy as np
@@ -91,6 +91,7 @@ def sample_chain(t_batch, x_0):
     helper = torch.Tensor([[t <= s for s in range(T + 1)] for t in t_batch]).to(device)
     
     for s in range(T, int(t_min), -1):
+        s_batch = torch.tensor([s], device=device).repeat(batch_size)
         helper_slice = helper[:, s]
         
         theta = noising_sch(t_batch)
@@ -99,7 +100,6 @@ def sample_chain(t_batch, x_0):
         
         dist = Beta(alpha, beta)
         samples.append(dist.sample())
-        s_batch = torch.tensor([s], device=device).repeat(batch_size)
 
         suff_stats += helper_slice.reshape([-1, 1, 1, 1]) * sufficient_stats(samples[-1], s_batch)
     return samples, suff_stats
@@ -124,6 +124,38 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     x_0_tensor = torch.cat(x_0_storage, dim=0)
     t_batch_tensor = torch.cat(t_batch_storage, dim=0)
     suff_stats_tensor = torch.cat(suff_stats_storage, dim=0)
+    return x_0_tensor, t_batch_tensor, suff_stats_tensor
+
+
+def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, save_path='generated_dataset.pth'):
+    n_iters = n_samples // batch_size
+    
+    x_0_storage = []
+    t_batch_storage = []
+    suff_stats_storage = []
+    
+    for i in tqdm(range(n_iters)):
+        x_0 = next(iter(pic_dataloader))[0].to(device)
+        t_batch = sample_t_batch(batch_size)
+        samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0)
+        
+        x_0_storage.append(x_0.cpu())
+        t_batch_storage.append(t_batch.cpu())
+        suff_stats_storage.append(suff_stats.cpu())
+        
+    x_0_tensor = torch.cat(x_0_storage, dim=0)
+    t_batch_tensor = torch.cat(t_batch_storage, dim=0)
+    suff_stats_tensor = torch.cat(suff_stats_storage, dim=0)
+    zero_tensor = torch.zeros_like(suff_stats_tensor)
+    
+    g_mean = torch.mean([torch.where(t_batch_tensor == t, suff_stats_tensor, zero_tensor) for t in range(T)])
+#     print(g_mean)
+#     g_std = 
+    
+    suff_stats_part2_mean = None
+    suff_stats_part2_std = None
+    
+    
     return x_0_tensor, t_batch_tensor, suff_stats_tensor
         
 from torchvision.datasets import MNIST

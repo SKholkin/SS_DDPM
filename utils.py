@@ -1,5 +1,7 @@
 import torch
 
+device = 'cuda'
+
 
 def sample_t_batch(batch_size, T=1000):
     
