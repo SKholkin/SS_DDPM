@@ -149,8 +149,6 @@ def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, sa
     zero_tensor = torch.zeros_like(suff_stats_tensor)
     
     g_mean = torch.mean([torch.where(t_batch_tensor == t, suff_stats_tensor, zero_tensor) for t in range(T)])
-#     print(g_mean)
-#     g_std = 
     
     suff_stats_part2_mean = None
     suff_stats_part2_std = None
