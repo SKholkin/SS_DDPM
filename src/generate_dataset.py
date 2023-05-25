@@ -117,7 +117,7 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     t_batch_storage = []
     suff_stats_storage = []
     
-    for i in tqdm(range(n_iters), leave=True, desc="C"):
+    for i in tqdm(range(n_iters), leave=True, desc="Creating Samples"):
         x_0 = next(iter(pic_dataloader))[0].to(cfg.device)
         t_batch = sample_t_batch(batch_size, T=cfg.T)
         samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0, cfg=cfg)
