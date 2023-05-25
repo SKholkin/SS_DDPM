@@ -1,22 +1,26 @@
 import numpy as np
 import torch.nn as nn
 from tqdm import tqdm
-import os
+from dataclasses import dataclass 
 import torch
 from torch.distributions.beta import Beta
 from scipy import interpolate
-
-from beta import sufficient_stats_part2
-batch_size = 2048
-T = 1000
 import numpy as np
-device = 'cuda'
+from torchvision.datasets import MNIST
+import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 
-def sample_t_batch(batch_size):
+@dataclass
+class Config:
+    batch_size: int = 512
+    T: int = 1000
+    device: str = "cuda"
+
+def sample_t_batch(batch_size, T):
     
     cat_dist = torch.distributions.categorical.Categorical(1 / T * torch.ones([T]))
     
-    t_batch = cat_dist.sample([batch_size]).to(device) + 1
+    t_batch = cat_dist.sample([batch_size]).to("cuda") + 1
     
     return t_batch
 
@@ -41,7 +45,7 @@ def sufficient_stats(x_t, t):
     return theta * torch.log(x_t / (1 - x_t))
                                                  
 
-def noising_sch(t, mode='exp_cubic', theta_start=1e3, theta_end = 1e-3):
+def noising_sch(t, mode='exp_cubic', theta_start=1e3, theta_end = 1e-3, T = 1000):
     if mode == 'linear':
         theta = theta_end + (T - t) / T * (theta_start - theta_end)
     elif mode=='exp_linear': 
@@ -54,23 +58,23 @@ def noising_sch(t, mode='exp_cubic', theta_start=1e3, theta_end = 1e-3):
     else:
         raise BaseException('Unknown schedule mode')
         
-    return torch.Tensor(theta).to(device)
+    return torch.Tensor(theta).to("cuda")
 
 
-def sample_chain_suff_stats_norm_alpha(t_batch, x_0):
+def sample_chain_suff_stats_norm_alpha(t_batch, x_0, cfg):
     samples = []
     suff_stats = torch.zeros_like(x_0)
     suff_stats_normed = torch.zeros_like(x_0)
     t_min = torch.min(t_batch)
-    helper = torch.Tensor([[t <= s for s in range(T + 1)] for t in t_batch]).to(device)
+    helper = torch.Tensor([[t <= s for s in range(cfg.T + 1)] for t in t_batch]).to("cuda")
     
     alphas = torch.zeros_like(x_0)
     
-    for s in range(T, int(t_min), -1):
-        s_batch = torch.tensor([s], device=device).repeat(batch_size)
+    for s in range(cfg.T, int(t_min), -1):
+        s_batch = torch.tensor([s], device="cuda").repeat(cfg.batch_size)
         helper_slice = helper[:, s]
         
-        mu = noising_sch(s_batch)
+        mu = noising_sch(s_batch, T=cfg.T)
         
         alpha, beta = alpha_beta(mu, x_0)
         
@@ -84,14 +88,14 @@ def sample_chain_suff_stats_norm_alpha(t_batch, x_0):
         
     return samples, suff_stats_normed
 
-def sample_chain(t_batch, x_0):
+def sample_chain(t_batch, x_0, cfg):
     samples = []
     suff_stats = torch.zeros_like(x_0)
     t_min = torch.min(t_batch)
-    helper = torch.Tensor([[t <= s for s in range(T + 1)] for t in t_batch]).to(device)
+    helper = torch.Tensor([[t <= s for s in range(cfg.T + 1)] for t in t_batch]).to("cuda")
     
-    for s in range(T, int(t_min), -1):
-        s_batch = torch.tensor([s], device=device).repeat(batch_size)
+    for s in range(cfg.T, int(t_min), -1):
+        s_batch = torch.tensor([s], device="cuda").repeat(cfg.batch_size)
         helper_slice = helper[:, s]
         
         theta = noising_sch(t_batch)
@@ -105,7 +109,7 @@ def sample_chain(t_batch, x_0):
     return samples, suff_stats
 
 
-def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='generated_dataset.pth'):
+def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='generated_dataset.pth', cfg=None):
     n_iters = n_samples // batch_size
     
     x_0_storage = []
@@ -113,9 +117,9 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     suff_stats_storage = []
     
     for i in tqdm(range(n_iters)):
-        x_0 = next(iter(pic_dataloader))[0].to(device)
-        t_batch = sample_t_batch(batch_size)
-        samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0)
+        x_0 = next(iter(pic_dataloader))[0].to(cfg.device)
+        t_batch = sample_t_batch(batch_size, T=cfg.T)
+        samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0, cfg=cfg)
         
         x_0_storage.append(x_0.cpu())
         t_batch_storage.append(t_batch.cpu())
@@ -127,7 +131,7 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     return x_0_tensor, t_batch_tensor, suff_stats_tensor
 
 
-def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, save_path='generated_dataset.pth'):
+def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, save_path='generated_dataset.pth', cfg=None):
     n_iters = n_samples // batch_size
     
     x_0_storage = []
@@ -135,7 +139,7 @@ def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, sa
     suff_stats_storage = []
     
     for i in tqdm(range(n_iters)):
-        x_0 = next(iter(pic_dataloader))[0].to(device)
+        x_0 = next(iter(pic_dataloader))[0].to("cuda")
         t_batch = sample_t_batch(batch_size)
         samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0)
         
@@ -148,7 +152,7 @@ def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, sa
     suff_stats_tensor = torch.cat(suff_stats_storage, dim=0)
     zero_tensor = torch.zeros_like(suff_stats_tensor)
     
-    g_mean = torch.mean([torch.where(t_batch_tensor == t, suff_stats_tensor, zero_tensor) for t in range(T)])
+    g_mean = torch.mean([torch.where(t_batch_tensor == t, suff_stats_tensor, zero_tensor) for t in range(cfg.T)])
     
     suff_stats_part2_mean = None
     suff_stats_part2_std = None
@@ -156,21 +160,18 @@ def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, sa
     
     return x_0_tensor, t_batch_tensor, suff_stats_tensor
         
-from torchvision.datasets import MNIST
-import torchvision.transforms as transforms
-
-dataset = MNIST(root='MNIST', download=True,transform=transforms.Compose([transforms.ToTensor()]))
-
-import matplotlib.pyplot as plt
-
-plt.imshow(dataset[0][0].squeeze(), cmap='gray')
-
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-n_samples = 100000
-x_0_tensor, t_batch_tensor, suff_stats_tensor = generate_dataset(dataloader, n_samples, batch_size=batch_size)
-
-torch.save(x_0_tensor, 'x_0_dataset.pth')
-torch.save(t_batch_tensor, 't_batch_dataset.pth')
-torch.save(suff_stats_tensor, 'suff_stats_dataset.pth')
+if __name__ == "__main__":
+    dataset = MNIST(root='MNIST', download=True,transform=transforms.Compose([transforms.ToTensor()]))
+    plt.imsave("assets/mnist.png", dataset[0][0].squeeze(), cmap="gray")
+    cfg = Config()
+    
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
+    
+    n_samples = 100000
+    x_0_tensor, t_batch_tensor, suff_stats_tensor = generate_dataset(dataloader, n_samples,
+                                                                     batch_size=cfg.batch_size, cfg=cfg)
+    print("Saving dataset")
+    torch.save(x_0_tensor, 'x_0_dataset.pth')
+    torch.save(t_batch_tensor, 't_batch_dataset.pth')
+    torch.save(suff_stats_tensor, 'suff_stats_dataset.pth')
