@@ -9,6 +9,10 @@ Since in SSDDPM forward process can not be implemented in closed form (as for ex
 ```
 python generate_dataset.py
 ```
-
+## Training SSDDPM
+To run training of UNet model after obtaining offline dataset, run
+```
+python 
+```
 ## Notebooks
 Some research code & dirty notebooks can be found in `playground` folder. UNet model is located in `models.py` and has nothing special in it.
