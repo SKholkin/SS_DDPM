@@ -12,10 +12,11 @@ import matplotlib.pyplot as plt
 
 @dataclass
 class Config:
-    batch_size: int = 512
+    batch_size: int = 512 # Lower if OOM
     T: int = 1000
     device: str = "cuda"
-
+    num_samples: int = 100000
+    
 def sample_t_batch(batch_size, T):
     
     cat_dist = torch.distributions.categorical.Categorical(1 / T * torch.ones([T]))
@@ -116,7 +117,7 @@ def generate_dataset(pic_dataloader, n_samples, batch_size=1024, save_path='gene
     t_batch_storage = []
     suff_stats_storage = []
     
-    for i in tqdm(range(n_iters)):
+    for i in tqdm(range(n_iters), leave=True, desc="Creating Samples"):
         x_0 = next(iter(pic_dataloader))[0].to(cfg.device)
         t_batch = sample_t_batch(batch_size, T=cfg.T)
         samples, suff_stats = sample_chain_suff_stats_norm_alpha(t_batch, x_0, cfg=cfg)
@@ -150,28 +151,21 @@ def generate_dataset_stats_normed(pic_dataloader, n_samples, batch_size=1024, sa
     x_0_tensor = torch.cat(x_0_storage, dim=0)
     t_batch_tensor = torch.cat(t_batch_storage, dim=0)
     suff_stats_tensor = torch.cat(suff_stats_storage, dim=0)
-    zero_tensor = torch.zeros_like(suff_stats_tensor)
-    
-    g_mean = torch.mean([torch.where(t_batch_tensor == t, suff_stats_tensor, zero_tensor) for t in range(cfg.T)])
-    
-    suff_stats_part2_mean = None
-    suff_stats_part2_std = None
-    
     
     return x_0_tensor, t_batch_tensor, suff_stats_tensor
         
 if __name__ == "__main__":
     dataset = MNIST(root='MNIST', download=True,transform=transforms.Compose([transforms.ToTensor()]))
     plt.imsave("assets/mnist.png", dataset[0][0].squeeze(), cmap="gray")
+    
     cfg = Config()
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, pin_memory=True)
     
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
-    
-    n_samples = 100000
+    n_samples = cfg.num_samples
     x_0_tensor, t_batch_tensor, suff_stats_tensor = generate_dataset(dataloader, n_samples,
                                                                      batch_size=cfg.batch_size, cfg=cfg)
+    
     print("Saving dataset")
-    torch.save(x_0_tensor, 'x_0_dataset.pth')
-    torch.save(t_batch_tensor, 't_batch_dataset.pth')
-    torch.save(suff_stats_tensor, 'suff_stats_dataset.pth')
+    torch.save(x_0_tensor, 'assets/x_0_dataset.pth')
+    torch.save(t_batch_tensor, 'assets/t_batch_dataset.pth')
+    torch.save(suff_stats_tensor, 'assets/suff_stats_dataset.pth')
