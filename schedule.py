@@ -8,6 +8,7 @@ else:
    device = 'cpu'
 
 def noising_sch(t, mode='exp_cubic', theta_start=1e3, theta_end = 1e-3, T=1000):
+    device = t.device
     if mode == 'linear':
         theta = theta_end + (T - t) / T * (theta_start - theta_end)
     elif mode=='exp_linear': 
