@@ -19,5 +19,5 @@ class ForwardDiffusionDataset(torch.utils.data.Dataset):
         pass
     
 def load_generated_dataset():
-    x_0_tensor, t_batch_tensor, suff_stats_tensor = torch.load('/assets/x_0_dataset.pth'), torch.load('/assets/t_batch_dataset.pth'), torch.load('/assets/suff_stats_dataset.pth')
+    x_0_tensor, t_batch_tensor, suff_stats_tensor = torch.load('assets/x_0_dataset.pth'), torch.load('assets/t_batch_dataset.pth'), torch.load('assets/suff_stats_dataset.pth')
     return ForwardDiffusionDataset(x_0_tensor, t_batch_tensor, suff_stats_tensor)

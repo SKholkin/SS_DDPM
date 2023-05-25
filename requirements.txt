@@ -1,3 +1,5 @@
 torch
 torchvision
 geomstats
+torchmetrics
+tqdm
