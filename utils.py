@@ -1,6 +1,6 @@
 import torch
 
-device = 'cuda'
+device = 'cpu'
 
 
 def sample_t_batch(batch_size, T=1000):
